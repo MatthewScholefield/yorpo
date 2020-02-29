@@ -2,16 +2,17 @@ import re
 from argparse import ArgumentParser
 from glob import glob
 from os import chdir
-from os.path import join, abspath
+from os.path import join, abspath, basename
 
 
 class Source:
     def __init__(self, excluded: list = None):
         self.include_lines = []
-        self.local_includes = ['#include "{}"'.format(i) for i in excluded or []]
+        self.local_includes = []
         self.other_lines = []
 
-        self.seen = set(excluded or [])
+        self.excluded = set(excluded or [])
+        self.seen = set()
 
     def add(self, filename):
         if filename in self.seen:
@@ -19,7 +20,11 @@ class Source:
         with open(filename) as f:
             deps, source = extract_deps(f.read())
         for dep in sorted(set(deps) - self.seen):
-            self.add(dep)
+            if dep in self.excluded:
+                self.seen.add(dep)
+                self.local_includes.append('#include "{}"'.format(dep))
+            else:
+                self.add(dep)
         for line in source.split('\n'):
             if re.match(r'\s*#include', line):
                 self.include_lines.append(line)
@@ -62,11 +67,17 @@ def main():
     args = parser.parse_args()
 
     chdir(args.source_root)
+    excluded = set(args.exclude or [])
 
-    sources = sum([glob(join('**', ext), recursive=True) for ext in ['*.c', '*.cpp', '*.cxx']], [])
+    sources = {
+        i
+        for ext in ['*.c', '*.cpp', '*.cxx']
+        for i in glob(join('**', ext), recursive=True)
+        if basename(i) not in excluded
+    }
 
     source = Source(args.exclude)
-    for filename in sources:
+    for filename in sorted(sources):
         source.add(filename)
 
     with open(args.out_file, 'w') as f:
