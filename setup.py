@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='yorpo',
-    version='0.1.0',
+    version='0.1.1',
     description='Tool to merge C/C++ source files',
     url='https://github.com/matthewscholefield/yorpo',
     author='Matthew D. Scholefield',
