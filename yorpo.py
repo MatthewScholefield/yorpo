@@ -2,7 +2,7 @@ import re
 from argparse import ArgumentParser
 from glob import glob
 from os import chdir, walk
-from os.path import join, abspath, basename, relpath, splitext
+from os.path import join, abspath, basename, relpath, splitext, isdir, isfile
 
 
 class Source:
@@ -146,34 +146,81 @@ def merge_to_markdown(root: str, files: list, out_file: str):
 
 def main():
     parser = ArgumentParser(description='Tool to merge source files')
-    parser.add_argument('source_root')
+    parser.add_argument('sources', nargs='+',
+                        help='Source directory or list of files to process')
     parser.add_argument('out_file', type=abspath)
     parser.add_argument('-e', '--exclude', nargs='+', help='Files to not include')
+    parser.add_argument('-x', '--extension', help='Filter files by extension (e.g., .tex, .py)')
     parser.add_argument('-m', '--markdown', action='store_true',
                         help='Merge all files into a single markdown file with annotated relative paths')
     args = parser.parse_args()
 
+    # Determine if we're working with explicit file list or directories
+    input_files = []
+    input_dirs = []
+    for path in args.sources:
+        if isfile(path):
+            input_files.append(abspath(path))
+        elif isdir(path):
+            input_dirs.append(abspath(path))
+        else:
+            parser.error(f"'{path}' is not a valid file or directory")
+
     if args.markdown:
-        root = abspath(args.source_root)
-        files = collect_files(root, args.exclude)
+        # Markdown mode
+        if input_files and input_dirs:
+            parser.error("Cannot mix files and directories in markdown mode")
+        if input_files:
+            # Use explicit file list
+            root = abspath('.')
+            files = [relpath(f, root) for f in input_files]
+        else:
+            # Use directory (use first directory if multiple provided)
+            root = input_dirs[0]
+            files = collect_files(root, args.exclude)
+
+        # Filter by extension if specified
+        if args.extension:
+            ext = args.extension if args.extension.startswith('.') else '.' + args.extension
+            files = [f for f in files if splitext(f)[1].lower() == ext.lower()]
+
         merge_to_markdown(root, files, args.out_file)
     else:
-        chdir(args.source_root)
-        excluded = set(args.exclude or [])
+        # C/C++ mode
+        if input_files:
+            # Use explicit file list
+            excluded = set(args.exclude or [])
+            source = Source(args.exclude)
+            for filepath in sorted(input_files):
+                source.add(filepath)
+            with open(args.out_file, 'w') as f:
+                f.write(source.compile())
+        else:
+            # Use directory mode (existing behavior)
+            if len(input_dirs) > 1:
+                parser.error("Cannot specify multiple directories in C/C++ mode")
+            chdir(input_dirs[0])
+            excluded = set(args.exclude or [])
 
-        sources = {
-            i
-            for ext in ['*.c', '*.cpp', '*.cxx']
-            for i in glob(join('**', ext), recursive=True)
-            if basename(i) not in excluded
-        }
+            # Use custom extensions if provided, otherwise default to C/C++
+            extensions = [args.extension] if args.extension else ['*.c', '*.cpp', '*.cxx']
+            # Ensure extensions start with dot and have wildcard
+            extensions = [ext if ext.startswith('.') else '.' + ext for ext in extensions]
+            extensions = ['*' + ext for ext in extensions]
 
-        source = Source(args.exclude)
-        for filename in sorted(sources):
-            source.add(filename)
+            sources = {
+                i
+                for ext in extensions
+                for i in glob(join('**', ext), recursive=True)
+                if basename(i) not in excluded
+            }
 
-        with open(args.out_file, 'w') as f:
-            f.write(source.compile())
+            source = Source(args.exclude)
+            for filename in sorted(sources):
+                source.add(filename)
+
+            with open(args.out_file, 'w') as f:
+                f.write(source.compile())
 
 
 if __name__ == '__main__':

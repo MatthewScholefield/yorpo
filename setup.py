@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='yorpo',
-    version='0.2.0',
+    version='0.3.0',
     description='Tool to merge source files into a single file',
     url='https://github.com/matthewscholefield/yorpo',
     author='Matthew D. Scholefield',
